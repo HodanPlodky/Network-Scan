@@ -260,7 +260,13 @@ namespace Network
         // TODO: dodělat dotazi pro reverselookup
         public void GetDomainNames(ref Device[] devices, int tries)
         {
-
+            new DnsLayer
+            {
+                IsQuery = true,
+                IsResponse = false,
+                DomainNameCompressionMode = DnsDomainNameCompressionMode.All,
+                Queries = new DnsQueryResourceRecord[] {}
+            };
         }
 
         // TODO: dodělat dotazi pro reverselookup
