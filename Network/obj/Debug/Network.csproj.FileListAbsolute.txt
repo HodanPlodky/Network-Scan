@@ -1,0 +1,17 @@
+c:\users\apore\documents\visual studio 2017\Projects\Network\Network\bin\Debug\Network.dll
+c:\users\apore\documents\visual studio 2017\Projects\Network\Network\bin\Debug\Network.pdb
+c:\users\apore\documents\visual studio 2017\Projects\Network\Network\bin\Debug\PcapDotNet.Base.dll
+c:\users\apore\documents\visual studio 2017\Projects\Network\Network\bin\Debug\PcapDotNet.Core.dll
+c:\users\apore\documents\visual studio 2017\Projects\Network\Network\bin\Debug\PcapDotNet.Core.Extensions.dll
+c:\users\apore\documents\visual studio 2017\Projects\Network\Network\bin\Debug\PcapDotNet.Packets.dll
+c:\users\apore\documents\visual studio 2017\Projects\Network\Network\bin\Debug\PcapDotNet.Base.pdb
+c:\users\apore\documents\visual studio 2017\Projects\Network\Network\bin\Debug\PcapDotNet.Base.xml
+c:\users\apore\documents\visual studio 2017\Projects\Network\Network\bin\Debug\PcapDotNet.Core.pdb
+c:\users\apore\documents\visual studio 2017\Projects\Network\Network\bin\Debug\PcapDotNet.Core.xml
+c:\users\apore\documents\visual studio 2017\Projects\Network\Network\bin\Debug\PcapDotNet.Core.Extensions.pdb
+c:\users\apore\documents\visual studio 2017\Projects\Network\Network\bin\Debug\PcapDotNet.Core.Extensions.xml
+c:\users\apore\documents\visual studio 2017\Projects\Network\Network\bin\Debug\PcapDotNet.Packets.pdb
+c:\users\apore\documents\visual studio 2017\Projects\Network\Network\bin\Debug\PcapDotNet.Packets.xml
+c:\users\apore\documents\visual studio 2017\Projects\Network\Network\obj\Debug\Network.csprojResolveAssemblyReference.cache
+c:\users\apore\documents\visual studio 2017\Projects\Network\Network\obj\Debug\Network.dll
+c:\users\apore\documents\visual studio 2017\Projects\Network\Network\obj\Debug\Network.pdb
