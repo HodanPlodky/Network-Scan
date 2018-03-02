@@ -12,6 +12,7 @@ using PcapDotNet.Packets.Arp;
 using PcapDotNet.Packets.Ethernet;
 using PcapDotNet.Packets.Dns;
 using PcapDotNet.Packets.Transport;
+using System.Diagnostics;
 
 namespace Network
 {
@@ -23,9 +24,11 @@ namespace Network
         public IPAddress BroadCast { get; private set; }
         public IPAddress NetworkAddr { get; private set; }
         public PhysicalAddress PhysicalAddr { get; private set; }
+        public IPAddress[] DNS { get; set; }
         public string PhysicalAddrString { get; private set; }
         public LivePacketDevice Device { get; private set; }
         public readonly List<Device> Devices = new List<Device>();
+        public Dictionary<IPAddress, PhysicalAddress> ArpCache { get; set; }
         private List<IPAddress> PosibleAddresesList; // pomocná proměná pro všechny možné adresy
 
         public Network()
@@ -38,6 +41,7 @@ namespace Network
             NetMask = tmp.UnicastAddresses[1].IPv4Mask;
             BroadCast = GetBroadCast();
             NetworkAddr = GetNetwork();
+            DNS = tmp.DnsAddresses.ToArray();
             Device = LivePacketDevice.AllLocalMachine.FirstOrDefault(x => x.Addresses[1].Address.ToString().Contains(Address.ToString()));
         }
 
@@ -84,8 +88,14 @@ namespace Network
         // vrátí adresu sítě pomocí adresy a masky
         private IPAddress GetNetwork()
         {
-            var addrBytes = Address.GetAddressBytes();
-            var maskBytes = NetMask.GetAddressBytes();
+            return GetNetwork(Address);
+        }
+
+        // vrátí adresu sítě pomocí adresy a masky
+        private IPAddress GetNetwork(IPAddress addr)
+        {
+            var addrBytes = addr.GetAddressBytes();
+            var maskBytes = addr.GetAddressBytes();
             byte[] result = new byte[4];
             for (int i = 0; i < addrBytes.Length; i++)
             {
@@ -112,7 +122,12 @@ namespace Network
 
         public override string ToString()
         {
-            return string.Format($"Address : {Address}\nDefault gateway : {DefaultGw}\nNetwork address : {NetworkAddr}\nBroadCast : {BroadCast}\nPhysical address : {PhysicalAddrString}");
+            string dns = "";
+            foreach(var i in DNS)
+            {
+                dns += "\n" + i.ToString();
+            }
+            return string.Format($"Address : {Address}\nDefault gateway : {DefaultGw}\nNetwork address : {NetworkAddr}\nBroadCast : {BroadCast}\nPhysical address : {PhysicalAddrString}\nDNS Servers:{dns}");
         }
 
         // vrátí všechny možné adresy pomocí netmask a broadcastu
@@ -260,13 +275,10 @@ namespace Network
         // TODO: dodělat dotazi pro reverselookup
         public void GetDomainNames(ref Device[] devices, int tries)
         {
-            new DnsLayer
-            {
-                IsQuery = true,
-                IsResponse = false,
-                DomainNameCompressionMode = DnsDomainNameCompressionMode.All,
-                Queries = new DnsQueryResourceRecord[] {}
-            };
+            //new EthernetLayer
+            //{
+            //    Destination = InNetwork(DNS[0]) ? 
+            //};
         }
 
         // TODO: dodělat dotazi pro reverselookup
@@ -341,6 +353,48 @@ namespace Network
                 temp[3 - i] = (byte)intTmp;
             }
             return new IPAddress(temp);
+        }
+
+        // zjistí jestli je addrese ve stejné síti
+        public bool InNetwork(IPAddress addr)
+        {
+            return NetMask.ToString() == GetNetwork(addr).ToString();
+        }
+
+        public PhysicalAddress GetMac(IPAddress addr)
+        {
+            return PhysicalAddr;
+        }
+
+        // prosím mé budoucí já aby našlo jinej způsob
+        // a ne tuhle kokotinu
+        // TODO: zprovoznit
+        public void GetArpCache()
+        {
+            Process cmd = new Process();
+            cmd.StartInfo.FileName = "cmd.exe";
+            cmd.StartInfo.RedirectStandardInput = true;
+            cmd.StartInfo.RedirectStandardOutput = true;
+            cmd.StartInfo.CreateNoWindow = false;
+            cmd.StartInfo.WindowStyle = ProcessWindowStyle.Hidden;
+            cmd.StartInfo.CreateNoWindow = true;
+            cmd.StartInfo.UseShellExecute = false;
+            cmd.Start();
+            cmd.StandardInput.WriteLine("arp -a");
+            cmd.StandardInput.Flush();
+            using (var output = cmd.StandardOutput)
+            {
+                for(int i = 0; i < 7; i++)
+                {
+                    output.ReadLine();
+                }
+                while (!output.EndOfStream)
+                {
+
+                    Console.WriteLine(output.ReadLine());
+                }
+            }
+            cmd.Close();
         }
     }
 
