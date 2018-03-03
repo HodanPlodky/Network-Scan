@@ -46,7 +46,7 @@ namespace Network
         }
 
         // upraví hwAddresu na normálně naformátovaný string
-        private string Split(string hdwAddr)
+        public static string Split(string hdwAddr)
         {
             string result = "";
             for (int i = 0; i < hdwAddr.Length - 1; i += 2)
@@ -64,21 +64,14 @@ namespace Network
             byte[] result = new byte[4];
             for (int i = 0; i < addrBytes.Length; i++)
             {
-                string temp = "";
                 int tempByte = 0;
                 int addrByte = addrBytes[i];
                 int maskByte = maskBytes[i];
                 for (int x = 0; x < 8; x++)
                 {
-                    temp = (maskByte % 2 == 1 ? (addrByte % 2).ToString() : "1") + temp;
+                    tempByte += (int)(maskByte % 2 == 1 ? (addrByte % 2)*Math.Pow(2, x) : Math.Pow(2, x));
                     addrByte = addrByte >> 1;
                     maskByte = maskByte >> 1;
-                }
-                foreach (var let in temp)
-                {
-                    tempByte = tempByte << 1;
-                    if (let == '1')
-                        tempByte = tempByte |= 1;
                 }
                 result[i] = (byte)tempByte;
             }
@@ -95,25 +88,18 @@ namespace Network
         private IPAddress GetNetwork(IPAddress addr)
         {
             var addrBytes = addr.GetAddressBytes();
-            var maskBytes = addr.GetAddressBytes();
+            var maskBytes = NetMask.GetAddressBytes();
             byte[] result = new byte[4];
             for (int i = 0; i < addrBytes.Length; i++)
             {
-                string temp = "";
                 int tempByte = 0;
                 int addrByte = addrBytes[i];
                 int maskByte = maskBytes[i];
                 for (int x = 0; x < 8; x++)
                 {
-                    temp = (addrByte % 2 * maskByte % 2).ToString() + temp;
+                    tempByte += (addrByte % 2 * maskByte % 2) * (int)Math.Pow(2, x);
                     addrByte = addrByte >> 1;
                     maskByte = maskByte >> 1;
-                }
-                foreach (var let in temp)
-                {
-                    tempByte = tempByte << 1;
-                    if (let == '1')
-                        tempByte = tempByte |= 1;
                 }
                 result[i] = (byte)tempByte;
             }
@@ -237,9 +223,9 @@ namespace Network
                                 }
                             );
                         pc.SendPacket(p);
-//#if DEBUG
-//                        Console.WriteLine(addr.ToString());
-//#endif
+#if DEBUG
+                        Console.WriteLine(addr.ToString());
+#endif
                     }
                 }
                 tmp = false;
@@ -265,7 +251,12 @@ namespace Network
                         var result = pc.ReceivePacket(out Packet p);
                         if (result == PacketCommunicatorReceiveResult.Ok)
                         {
-                            Console.WriteLine(UIntToIp(p.IpV4.Source.ToValue()));
+                            var sourceIp = UIntToIp(p.Ethernet.IpV4.Source.ToValue());
+                            var destinationIp = UIntToIp(p.Ethernet.IpV4.Destination.ToValue());
+                            PhysicalAddress sourceHw = new PhysicalAddress(p.Ethernet.Source.ToValue());
+#if DEBUG
+                            Console.WriteLine(s + " - " + p.Ethernet.IpV4.Destination);
+#endif
                         }
                     }
                 }
@@ -331,6 +322,24 @@ namespace Network
             }
         }
 
+        // převod uint na macovku
+        private PhysicalAddress UInt48ToHw(uint value)
+        {
+            byte[] temp = new byte[6];
+            for (int i = 0; i < temp.Length; i++)
+            {
+                //string tmp = "";
+                int intTmp = 0;
+                for (int j = 0; j < 8; j++)
+                {
+                    intTmp += (int)((value % 2)*Math.Pow(2, j));
+                    value = value >> 1;
+                }
+                temp[3 - i] = (byte)intTmp;
+            }
+            return new PhysicalAddress(temp);
+        }
+
         // převod uint na ip (array bytů)
         private IPAddress UIntToIp (uint value)
         {
@@ -390,8 +399,9 @@ namespace Network
                 }
                 while (!output.EndOfStream)
                 {
-
-                    Console.WriteLine(output.ReadLine());
+                    var temp = output.ReadLine();
+                    Console.WriteLine(temp);
+                    
                 }
             }
             cmd.Close();
@@ -402,12 +412,14 @@ namespace Network
     {
         public IPAddress IpAddr { get; private set; }
         public PhysicalAddress HardwareAddr { get; private set; }
+        public string HardwareAddrString { get; set; }
         public string Name { get; set; }
 
-        public Device(byte[] ipAddr, byte[] hwAddr, string name)
+        public Device(byte[] ipAddr, byte[] hwAddr,  string name)
         {
             IpAddr = new IPAddress(ipAddr);
             HardwareAddr = new PhysicalAddress(hwAddr);
+            HardwareAddrString = Network.Split(HardwareAddr.ToString());
             Name = name;
         }
 
