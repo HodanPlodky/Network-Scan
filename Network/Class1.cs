@@ -13,6 +13,8 @@ using PcapDotNet.Packets.Ethernet;
 using PcapDotNet.Packets.Dns;
 using PcapDotNet.Packets.Transport;
 using System.Diagnostics;
+using PcapDotNet.Base;
+using PcapDotNet.Packets.IpV4;
 
 namespace Network
 {
@@ -31,6 +33,9 @@ namespace Network
         public Dictionary<IPAddress, PhysicalAddress> ArpCache { get; set; }
         private List<IPAddress> PosibleAddresesList; // pomocná proměná pro všechny možné adresy
 
+        public delegate void NewDevice();
+        public event NewDevice NewDeviceHandle;
+
         public Network()
         {
             var tmp = NetworkInterface.GetAllNetworkInterfaces().FirstOrDefault(x => x.OperationalStatus == OperationalStatus.Up).GetIPProperties();
@@ -43,6 +48,7 @@ namespace Network
             NetworkAddr = GetNetwork();
             DNS = tmp.DnsAddresses.ToArray();
             Device = LivePacketDevice.AllLocalMachine.FirstOrDefault(x => x.Addresses[1].Address.ToString().Contains(Address.ToString()));
+            NewDeviceHandle += delegate () { Console.WriteLine("new device"); };
         }
 
         // upraví hwAddresu na normálně naformátovaný string
@@ -69,7 +75,7 @@ namespace Network
                 int maskByte = maskBytes[i];
                 for (int x = 0; x < 8; x++)
                 {
-                    tempByte += (int)(maskByte % 2 == 1 ? (addrByte % 2)*Math.Pow(2, x) : Math.Pow(2, x));
+                    tempByte += (int)(maskByte % 2 == 1 ? (addrByte % 2) * Math.Pow(2, x) : Math.Pow(2, x));
                     addrByte = addrByte >> 1;
                     maskByte = maskByte >> 1;
                 }
@@ -109,7 +115,7 @@ namespace Network
         public override string ToString()
         {
             string dns = "";
-            foreach(var i in DNS)
+            foreach (var i in DNS)
             {
                 dns += "\n" + i.ToString();
             }
@@ -176,7 +182,7 @@ namespace Network
             // zaznamenávání příchozích packetů
             new Thread(new ThreadStart(delegate ()
             {
-                using(PacketCommunicator pc = Device.Open(65536, PacketDeviceOpenAttributes.Promiscuous, 1000))
+                using (PacketCommunicator pc = Device.Open(65536, PacketDeviceOpenAttributes.Promiscuous, 1000))
                 {
                     while (tmp)
                     {
@@ -218,7 +224,7 @@ namespace Network
                                     ProtocolType = EthernetType.IpV4,
                                     SenderHardwareAddress = Array.AsReadOnly(PhysicalAddr.GetAddressBytes()),
                                     SenderProtocolAddress = Array.AsReadOnly(Address.GetAddressBytes()),
-                                    TargetHardwareAddress = Array.AsReadOnly(new byte[] { 255,255,255,255,255,255}),
+                                    TargetHardwareAddress = Array.AsReadOnly(new byte[] { 255, 255, 255, 255, 255, 255 }),
                                     TargetProtocolAddress = Array.AsReadOnly(addr.GetAddressBytes())
                                 }
                             );
@@ -236,10 +242,10 @@ namespace Network
         // proscanování sítě pomocí arp
         public Device[] Scan(int tries)
         {
-            return Scan(PosibleAddresses()[0], PosibleAddresses().Last(x=>x is IPAddress), tries);
+            return Scan(PosibleAddresses()[0], PosibleAddresses().Last(x => x is IPAddress), tries);
         }
 
-        // TODO: pomalé sledování sítě jen pomocí příchozích packetů
+        // pomalé sledování sítě jen pomocí příchozích packetů
         public void SlowScan()
         {
             Task.Run(delegate ()
@@ -253,10 +259,36 @@ namespace Network
                         {
                             var sourceIp = UIntToIp(p.Ethernet.IpV4.Source.ToValue());
                             var destinationIp = UIntToIp(p.Ethernet.IpV4.Destination.ToValue());
-                            PhysicalAddress sourceHw = new PhysicalAddress(p.Ethernet.Source.ToValue());
+                            var sourceHw = UInt48ToHw(p.Ethernet.Source.ToValue());
+                            var destinationHw = UInt48ToHw(p.Ethernet.Destination.ToValue());
+                            var tmpSource = new Device(sourceIp.GetAddressBytes(), sourceHw.GetAddressBytes(), null);
+                            var tmpDestination = new Device(destinationIp.GetAddressBytes(), destinationHw.GetAddressBytes(), null);
+                            if (InNetwork(tmpSource.IpAddr) && !Devices.Any(x => x.Compare(tmpSource)))
+                            {
+                                Devices.Add(tmpSource);
 #if DEBUG
-                            Console.WriteLine(s + " - " + p.Ethernet.IpV4.Destination);
+                                //Console.Clear();
+                                Console.WriteLine("-----------------------");
+                                foreach (var i in Devices)
+                                {
+                                    Console.WriteLine(i);
+                                }
 #endif
+                                //NewDeviceHandle();
+                            }
+                            if (InNetwork(tmpDestination.IpAddr) && !Devices.Any(x => x.Compare(tmpDestination)))
+                            {
+                                Devices.Add(tmpDestination);
+#if DEBUG
+                                Console.WriteLine("-----------------------");
+                                foreach (var i in Devices)
+                                {
+                                    Console.WriteLine(i);
+                                }
+#endif
+                                //NewDeviceHandle();
+                            }
+
                         }
                     }
                 }
@@ -266,16 +298,61 @@ namespace Network
         // TODO: dodělat dotazi pro reverselookup
         public void GetDomainNames(ref Device[] devices, int tries)
         {
-            //new EthernetLayer
-            //{
-            //    Destination = InNetwork(DNS[0]) ? 
-            //};
+            using (var pc = Device.Open(65536, PacketDeviceOpenAttributes.Promiscuous, 1000))
+            {
+                Packet p = PacketBuilder.Build
+                    (
+                        DateTime.Now,
+                        new EthernetLayer
+                        {
+                            Destination = new MacAddress("00:11:43:37:b4:5e"),
+                            Source = new MacAddress(PhysicalAddrString)
+                        },
+                        new IpV4Layer
+                        {
+                            Source = new IpV4Address(Address.ToString()),
+                            CurrentDestination = new IpV4Address("10.1.1.50"),
+                            Protocol = IpV4Protocol.Ip
+                        },
+                        new UdpLayer
+                        {
+                            DestinationPort = 53
+                        },
+                        new DnsLayer
+                        {
+                            IsQuery = true,
+                            IsResponse = false,
+                            Queries = new DnsQueryResourceRecord[] { new DnsQueryResourceRecord(new DnsDomainName("ssakhk.cz"), DnsType.A, DnsClass.Any) },
+
+                        }
+                    );
+                pc.SendPacket(p);
+                var run = true;
+                do
+                {
+                    var result = pc.ReceivePacket(out Packet inP);
+                    if (result == PacketCommunicatorReceiveResult.Ok)
+                    {
+                        if (inP.IpV4.Udp.Dns != null)
+                        {
+                            if (inP.IpV4.Udp.Dns.IsResponse == true)
+                            {
+                                foreach (var i in inP.IpV4.Udp.Dns.Answers)
+                                {
+                                    Console.WriteLine(i);
+                                }
+                                run = false;
+                            }
+                        }
+                    }
+                } while (run);
+            }
         }
 
         // TODO: dodělat dotazi pro reverselookup
         public void GetDomainNames(int tries)
         {
-            var tmp = Scan(tries);
+            var tmp = new Device[5];
             GetDomainNames(ref tmp, tries);
         }
 
@@ -287,9 +364,19 @@ namespace Network
                 (
                     delegate ()
                     {
-                        using(PacketCommunicator pc = Device.Open(65536, PacketDeviceOpenAttributes.Promiscuous, 1000))
+                        using (PacketCommunicator pc = Device.Open(65536, PacketDeviceOpenAttributes.Promiscuous, 1000))
                         {
                             var result = pc.ReceivePacket(out Packet p);
+                            if (result == PacketCommunicatorReceiveResult.Ok)
+                            {
+                                if (UIntToIp(p.Ethernet.IpV4.Destination.ToValue()).ToString() == DefaultGw.ToString() || InNetwork(UIntToIp(p.Ethernet.IpV4.Destination.ToValue())))
+                                {
+#if DEBUG
+                                    Console.WriteLine("foreign packet");
+#endif
+                                    p.Ethernet.GetType().GetProperty("Destionation").SetValue(p.Ethernet, new MacAddress(Devices.First(x => x.IpAddr.ToString() == DefaultGw.ToString()).HardwareAddrString));
+                                }
+                            }
                         }
                     }
                 ));
@@ -322,9 +409,31 @@ namespace Network
             }
         }
 
-        // převod uint na macovku
-        private PhysicalAddress UInt48ToHw(uint value)
+        public void BlockIp(IPAddress ip)
         {
+            Task.Run(delegate ()
+            {
+                using (var pc = Device.Open(65536, PacketDeviceOpenAttributes.Promiscuous, 1000))
+                {
+                    while (true)
+                    {
+                        Packet p = PacketBuilder.Build
+                            (
+                                DateTime.Now,
+                                new EthernetLayer
+                                {
+
+                                }
+                            );
+                    }
+                }
+            });
+        }
+
+        // převod uint na macovku
+        private PhysicalAddress UInt48ToHw(UInt48 inValue)
+        {
+            ulong value = (ulong)inValue;
             byte[] temp = new byte[6];
             for (int i = 0; i < temp.Length; i++)
             {
@@ -332,28 +441,29 @@ namespace Network
                 int intTmp = 0;
                 for (int j = 0; j < 8; j++)
                 {
-                    intTmp += (int)((value % 2)*Math.Pow(2, j));
+                    intTmp += (int)((value % 2) * Math.Pow(2, j));
                     value = value >> 1;
                 }
-                temp[3 - i] = (byte)intTmp;
+                temp[5 - i] = (byte)intTmp;
             }
             return new PhysicalAddress(temp);
         }
 
         // převod uint na ip (array bytů)
-        private IPAddress UIntToIp (uint value)
+        // TODO : optimalizace jako u UInt48ToHw
+        private IPAddress UIntToIp(uint value)
         {
             byte[] temp = new byte[4];
-            for(int i = 0; i < temp.Length; i++)
+            for (int i = 0; i < temp.Length; i++)
             {
                 string tmp = "";
                 int intTmp = 0;
-                for(int j = 0; j < 8; j++)
+                for (int j = 0; j < 8; j++)
                 {
                     tmp = (value % 2).ToString() + tmp;
                     value = value >> 1;
                 }
-                foreach(var bit in tmp)
+                foreach (var bit in tmp)
                 {
                     intTmp = intTmp << 1;
                     if (bit == '1')
@@ -367,7 +477,13 @@ namespace Network
         // zjistí jestli je addrese ve stejné síti
         public bool InNetwork(IPAddress addr)
         {
-            return NetMask.ToString() == GetNetwork(addr).ToString();
+#if DEBUG
+            //Console.WriteLine(addr);
+            //Console.WriteLine(NetworkAddr.ToString());
+            //Console.WriteLine(GetNetwork(addr).ToString());
+            //Console.WriteLine("---------------------------------------------");
+#endif
+            return NetworkAddr.ToString() == GetNetwork(addr).ToString();
         }
 
         public PhysicalAddress GetMac(IPAddress addr)
@@ -393,15 +509,20 @@ namespace Network
             cmd.StandardInput.Flush();
             using (var output = cmd.StandardOutput)
             {
-                for(int i = 0; i < 7; i++)
+                for (int i = 0; i < 7; i++)
                 {
                     output.ReadLine();
                 }
                 while (!output.EndOfStream)
                 {
                     var temp = output.ReadLine();
-                    Console.WriteLine(temp);
-                    
+                    if (temp == "" || temp == null)
+                        break;
+                    //Console.WriteLine(temp);
+                    var ipString = temp.Substring(0, "  Internet Address ".Length).Replace(" ", "");
+                    var hwString = temp.Substring("  Internet Address      ".Length, "Physical Address  ".Length).Replace(" ", "");
+                    Console.WriteLine(ipString + " -> " + hwString);
+                    //new PhysicalAddress()
                 }
             }
             cmd.Close();
@@ -415,7 +536,7 @@ namespace Network
         public string HardwareAddrString { get; set; }
         public string Name { get; set; }
 
-        public Device(byte[] ipAddr, byte[] hwAddr,  string name)
+        public Device(byte[] ipAddr, byte[] hwAddr, string name)
         {
             IpAddr = new IPAddress(ipAddr);
             HardwareAddr = new PhysicalAddress(hwAddr);
@@ -427,7 +548,7 @@ namespace Network
         {
             var ip1 = IpAddr.GetAddressBytes();
             var ip2 = dev.IpAddr.GetAddressBytes();
-            for(int i = 0; i < 4; i++)
+            for (int i = 0; i < 4; i++)
             {
                 if (ip1[i] != ip2[i])
                     return false;
@@ -437,7 +558,7 @@ namespace Network
 
         public override string ToString()
         {
-            return string.Format($"{IpAddr.ToString()}\n{string.Join(":", HardwareAddr.GetAddressBytes())}\n{Name}");
+            return string.Format($"{IpAddr.ToString()} -> {HardwareAddrString} -> {(Name == null || Name == "" ? "None" : Name)}");
         }
     }
 }
